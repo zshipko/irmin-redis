@@ -28,6 +28,17 @@ let config ?config:(config=Irmin.Private.Conf.empty) ?port ?nclients:(nclients=4
   let config = C.add config Key.nclients nclients in
   config
 
+let info ?author fmt =
+  Fmt.kstrf (fun msg () ->
+    let date = Int64.of_float (Unix.gettimeofday ()) in
+    let author = match author with
+      | Some a -> a
+      | None   ->
+        Printf.sprintf "%d@%s.[%d]" (Unix.getuid()) (Unix.gethostname()) (Unix.getpid())
+    in
+    Irmin.Info.v ~date ~author msg
+  ) fmt
+
 module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
   type key = K.t
   type value = V.t
@@ -80,7 +91,7 @@ module Link (K: Irmin.Hash.S) = struct
       let key = to_string K.pp key in
       let index = to_string K.pp index in
       ignore (Client.run client [| "SET"; index; key |]);
-      Lwt.return key)
+      Lwt.return_unit)
 end
 
 module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
