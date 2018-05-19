@@ -2,7 +2,7 @@ irmin-redis — Redis storage for Irmin
 -------------------------------------------------------------------------------
 %%VERSION%%
 
-irmin-redis is TODO
+irmin-redis implements an Irmin storage backend using Redis
 
 irmin-redis is distributed under the ISC license.
 
@@ -12,7 +12,7 @@ Homepage: https://github.com/zshipko/irmin-redis
 
 irmin-redis can be installed with `opam`:
 
-    opam install irmin-redis
+    opam pin add irmin-redis git+https://github.com/zshipko/irmin-redis
 
 If you don't use `opam` consult the [`opam`](opam) file for build
 instructions.
