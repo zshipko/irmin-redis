@@ -155,8 +155,8 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
         local set = ARGV[2]
         local value = redis.call("GET", key)
 
-        if key == test then
-          if set then
+        if value == test then
+          if set:len() > 0 then
             redis.call("SET", key, set)
           else
             redis.call("DEL", key)
@@ -167,7 +167,7 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
         end
       |}
     in
-    let args = [| "SCRIPT"; script; "1"; key'|] in
+    let args = [| "EVAL"; script; "1"; key'|] in
     let args =
       match test with
       | Some t -> Array.append args [| to_string V.pp t |]
