@@ -146,15 +146,41 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
       | Status "OK" -> W.notify t.w key None
       | _ -> Lwt.return_unit)
 
-  let set' = set
   let test_and_set t key ~test ~set =
-    match set with
-    | Some s ->
-        set' t key s >>= fun () ->
-        Lwt.return_true
-    | None ->
-        remove t key >>= fun () ->
-        Lwt.return_true
+    Pool.use t.t (fun client ->
+      let key' = to_string K.pp key in
+      let script = {|
+        local key = KEYS[1]
+        local test = ARGV[1]
+        local set = ARGV[2]
+        local value = redis.call("GET", key)
+
+        if key == test then
+          if set then
+            redis.call("SET", key, set)
+          else
+            redis.call("DEL", key)
+          end
+          return 1
+        else
+          return 0
+        end
+      |}
+    in
+    let args = [| "SCRIPT"; script; "1"; key'|] in
+    let args =
+      match test with
+      | Some t -> Array.append args [| to_string V.pp t |]
+      | None -> Array.append args [| "" |]
+    in
+    let args =
+      match set with
+      | Some t -> Array.append args [| to_string V.pp t |]
+      | None -> Array.append args [| "" |]
+    in
+    match Client.run client args with
+    | Integer 1L -> W.notify t.w key set >>= fun () -> Lwt.return_true
+    | _ -> Lwt.return_false)
 
 end
 
