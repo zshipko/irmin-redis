@@ -1,0 +1,30 @@
+opam-version: "1.2"
+maintainer: "Zach Shipko <zachshipko@gmail.com>"
+authors: ["Zach Shipko <zachshipko@gmail.com>"]
+homepage: "https://github.com/zshipko/irmin-redis"
+doc: "https://github.com/zshipko/irmin-redis/doc"
+license: "ISC"
+dev-repo: "https://github.com/zshipko/irmin-redis.git"
+bug-reports: "https://github.com/zshipko/irmin-redis/issues"
+tags: []
+
+available: [ ocaml-version >= "4.03.0"]
+
+depends:
+[
+    "jbuilder" {build}
+    "hiredis"
+    "irmin"
+]
+
+depopts: []
+
+build:
+[
+    ["jbuilder" "build"]
+]
+
+build-test:
+[
+    ["jbuilder" "runtest"]
+]
