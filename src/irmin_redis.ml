@@ -149,23 +149,23 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
   let test_and_set t key ~test ~set =
     Pool.use t.t (fun client ->
       let key' = to_string K.pp key in
-      let script = {|
-        local key = KEYS[1]
+      let script = (* begin lua *) {|
+
+        local v = redis.call("GET", KEYS[1]) or ""
         local test = ARGV[1]
         local set = ARGV[2]
-        local value = redis.call("GET", key)
 
-        if value == test then
+        if v == test then
           if set:len() > 0 then
-            redis.call("SET", key, set)
+            redis.call("SET", KEYS[1], set)
           else
-            redis.call("DEL", key)
+            redis.call("DEL", KEYS[1])
           end
           return 1
         else
           return 0
         end
-      |}
+      |} (* end lua *)
     in
     let args = [| "EVAL"; script; "1"; key'|] in
     let args =
@@ -180,8 +180,7 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
     in
     match Client.run client args with
     | Integer 1L -> W.notify t.w key set >>= fun () -> Lwt.return_true
-    | _ -> Lwt.return_false)
-
+    | x -> Lwt.return_false)
 end
 
 module Make = Irmin.Make(AO)(RW)
@@ -193,3 +192,4 @@ module KV (C: Irmin.Contents.S) =
     (Irmin.Path.String_list)
     (Irmin.Branch.String)
     (Irmin.Hash.SHA1)
+

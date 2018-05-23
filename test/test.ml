@@ -4,6 +4,19 @@
    %%NAME%% %%VERSION%%
   ---------------------------------------------------------------------------*)
 
+module Store = Irmin_redis.KV(Irmin.Contents.String)
+open Lwt.Infix
+
+let main =
+  let cfg = Irmin_redis.config ~port:6379 "127.0.0.1" in
+  Store.Repo.v cfg >>= fun x ->
+  Store.master x >>= fun t ->
+  Store.set t ["a"; "b"; "c"] (Unix.gettimeofday () |> string_of_float) ~info:(Irmin_redis.info "testing") >>= fun () ->
+  Store.get t ["a"; "b"; "c"] >|= fun s ->
+  print_endline s
+
+let () = Lwt_main.run main
+
 (*---------------------------------------------------------------------------
    Copyright (c) 2018 Zach Shipko
 
