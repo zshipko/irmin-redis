@@ -39,6 +39,16 @@ let info ?author fmt =
     Irmin.Info.v ~date ~author msg
   ) fmt
 
+let rec run client args = match Client.run client args with
+  | Error s when String.sub s 0 5 = "MOVED" ->
+    let addr = String.split_on_char ' ' s |> List.rev |> List.hd in
+    (match String.split_on_char ':' addr with
+    | host::port::_ ->
+      let client = Hiredis.Client.connect ~port:(int_of_string port) host in
+      run client args
+    | _ -> Value.nil)
+  | x -> x
+
 module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
   type key = K.t
   type value = V.t
@@ -54,19 +64,19 @@ module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
   let find t key =
     Pool.use t (fun client ->
       let key = to_string K.pp key in
-      match Client.run client [| "GET"; key |] with
+      match run client [| "GET"; key |] with
       | String s ->
         begin
           match V.of_string s with
           | Ok s -> Lwt.return_some s
           | _ -> Lwt.return_none
         end
-      | _ -> Lwt.return_none)
+      | x -> print_endline (encode_string x); Lwt.return_none)
 
   let mem t key =
     Pool.use t (fun client ->
       let key = to_string K.pp key in
-      match Client.run client [| "EXISTS"; key |] with
+      match run client [| "EXISTS"; key |] with
       | Integer 1L -> Lwt.return_true
       | _ -> Lwt.return_false)
 end
@@ -79,7 +89,7 @@ module AO (K: Irmin.Hash.S) (V: Irmin.Contents.Conv) = struct
       let key = K.digest V.t value in
       let key' = to_string K.pp key in
       let value = to_string V.pp value in
-      ignore (Client.run client [| "SET"; key'; value |]);
+      ignore (run client [| "SET"; key'; value |]);
       Lwt.return key)
 end
 
@@ -90,7 +100,7 @@ module Link (K: Irmin.Hash.S) = struct
     Pool.use t (fun client ->
       let key = to_string K.pp key in
       let index = to_string K.pp index in
-      ignore (Client.run client [| "SET"; index; key |]);
+      ignore (run client [| "SET"; index; key |]);
       Lwt.return_unit)
 end
 
@@ -118,7 +128,7 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
 
   let list t =
     Pool.use t.t (fun client ->
-      match Client.run client [| "KEYS"; "*" |] with
+      match run client [| "KEYS"; "*" |] with
       | Array arr ->
           Array.map (fun k ->
             let k = Value.to_string k in
@@ -135,61 +145,31 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
     Pool.use t.t (fun client ->
       let key' = to_string K.pp key in
       let value' = to_string V.pp value in
-      match Client.run client [| "SET"; key'; value' |] with
+      match run client [| "SET"; key'; value' |] with
       | Status "OK" -> W.notify t.w key (Some value)
       | _ -> Lwt.return_unit)
+
+  let set' = set
 
   let remove t key =
     Pool.use t.t (fun client ->
       let key' = to_string K.pp key in
-      match Client.run client [| "DEL"; key' |] with
+      match run client [| "DEL"; key' |] with
       | Status "OK" -> W.notify t.w key None
       | _ -> Lwt.return_unit)
 
   let test_and_set t key ~test ~set =
-    Pool.use t.t (fun client ->
-      let key' = to_string K.pp key in
-      let script = (* begin lua *) {|
-
-        local v = redis.call("GET", KEYS[1]) or ""
-        local test = ARGV[1]
-        local set = ARGV[2]
-
-        if v == test then
-          if set:len() > 0 then
-            redis.call("SET", KEYS[1], set)
-          else
-            redis.call("DEL", KEYS[1])
-          end
-          return 1
-        else
-          return 0
-        end
-      |} (* end lua *)
-    in
-    let args = [| "EVAL"; script; "1"; key'|] in
-    let args =
-      match test with
-      | Some t -> Array.append args [| to_string V.pp t |]
-      | None -> Array.append args [| "" |]
-    in
-    let args =
-      match set with
-      | Some t -> Array.append args [| to_string V.pp t |]
-      | None -> Array.append args [| "" |]
-    in
-    match Client.run client args with
-    | Integer 1L -> W.notify t.w key set >>= fun () -> Lwt.return_true
-    | Error s when String.sub s 0 5 = "MOVED" ->
-        let addr = String.split_on_char ' ' s |> List.rev |> List.hd in
-        (match String.split_on_char ':' addr with
-        | host::port::_ ->
-            let client = Hiredis.Client.connect ~port:(int_of_string port) host in
-            (match Client.run client args with
-            | Integer 1L -> W.notify t.w key set >>= fun () -> Lwt.return_true
-            | _ -> Lwt.return_false)
-        | _ -> Lwt.return_false)
-    | x -> print_endline (encode_string x); Lwt.return_false)
+    find t key >>= fun v ->
+    if Irmin.Type.(equal (option V.t)) test v then (
+      (match set with
+        | None -> remove t key
+        | Some v -> set' t key v
+      ) >>= fun () ->
+      W.notify t.w key set >>= fun () ->
+      Lwt.return_true
+    ) else (
+      Lwt.return_false
+    )
 end
 
 module Make = Irmin.Make(AO)(RW)

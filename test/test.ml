@@ -7,8 +7,9 @@
 module Store = Irmin_redis.KV(Irmin.Contents.String)
 open Lwt.Infix
 
+
 let main =
-  let cfg = Irmin_redis.config ~port:1234 "127.0.0.1" in
+  let cfg = Irmin_redis.config ~port:7000 "127.0.0.1" in
   Store.Repo.v cfg >>= fun x ->
   Store.master x >>= fun t ->
   print_endline "SET";
