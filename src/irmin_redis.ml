@@ -180,7 +180,16 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
     in
     match Client.run client args with
     | Integer 1L -> W.notify t.w key set >>= fun () -> Lwt.return_true
-    | x -> Lwt.return_false)
+    | Error s when String.sub s 0 5 = "MOVED" ->
+        let addr = String.split_on_char ' ' s |> List.rev |> List.hd in
+        (match String.split_on_char ':' addr with
+        | host::port::_ ->
+            let client = Hiredis.Client.connect ~port:(int_of_string port) host in
+            (match Client.run client args with
+            | Integer 1L -> W.notify t.w key set >>= fun () -> Lwt.return_true
+            | _ -> Lwt.return_false)
+        | _ -> Lwt.return_false)
+    | x -> print_endline (encode_string x); Lwt.return_false)
 end
 
 module Make = Irmin.Make(AO)(RW)
