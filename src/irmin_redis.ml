@@ -71,7 +71,7 @@ module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
           | Ok s -> Lwt.return_some s
           | _ -> Lwt.return_none
         end
-      | x -> print_endline (encode_string x); Lwt.return_none)
+      | x -> Lwt.return_none)
 
   let mem t key =
     Pool.use t (fun client ->
