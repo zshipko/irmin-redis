@@ -14,15 +14,24 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
+open Lwt.Infix
 open Irmin_test
 
-let misc = [
-  "link", [
-    Test_link.test "redis" Test_redis.link;
-  ]
-]
+let store = store (module Irmin_redis.Make) (module Irmin.Metadata.None)
 
-let () =
-  Test_store.run "irmin" ~misc [
-    `Quick , Test_redis.suite;
-  ]
+module Link = struct
+  include Irmin_redis.Link(Irmin.Hash.SHA1)
+  let v () = v (Irmin_redis.config ~port:6379 "127.0.0.1")
+end
+
+let link = (module Link: Test_link.S)
+let config = Irmin_redis.config ~port:6379 "127.0.0.1"
+
+let clean () =
+  let (module S: Test_S) = store in
+  S.Repo.v config >>= fun repo ->
+  S.Repo.branches repo >>= Lwt_list.iter_p (S.Branch.remove repo)
+
+let init () = Lwt.return_unit
+let stats = None
+let suite = { name = "REDIS"; kind = `Core; init; clean; config; store; stats }

@@ -21,8 +21,9 @@ module Key = struct
       "nclients" Irmin.Private.Conf.int 4
 end
 
-let config ?config:(config=Irmin.Private.Conf.empty) ?port ?nclients:(nclients=4) hostname =
+let config ?config:(config=Irmin.Private.Conf.empty) ?root:(root="irmin") ?port ?nclients:(nclients=4) hostname =
   let module C = Irmin.Private.Conf in
+  let config = C.add config Irmin.Private.Conf.root (Some root) in
   let config = C.add config Key.hostname hostname in
   let config = C.add config Key.port port in
   let config = C.add config Key.nclients nclients in
@@ -52,19 +53,23 @@ let rec run client args = match Client.run client args with
 module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
   type key = K.t
   type value = V.t
-  type t = Pool.t
+  type t = string * Pool.t
 
-  let v config =
+  let v prefix config =
     let module C = Irmin.Private.Conf in
+    let root = match C.get config Irmin.Private.Conf.root with
+      | Some root -> root ^ ":" ^ prefix ^ ":"
+      | None -> ""
+    in
     let hostname = C.get config Key.hostname in
     let port = C.get config Key.port in
     let nclients = C.get config Key.nclients in
-    Lwt.return (Pool.create ?port hostname nclients)
+    Lwt.return (root, Pool.create ?port hostname nclients)
 
-  let find t key =
+  let find (root, t) key =
     Pool.use t (fun client ->
       let key = to_string K.pp key in
-      match run client [| "GET"; key |] with
+      match run client [| "GET"; root ^  key |] with
       | String s ->
         begin
           match V.of_string s with
@@ -73,10 +78,10 @@ module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
         end
       | x -> Lwt.return_none)
 
-  let mem t key =
+  let mem (root, t) key =
     Pool.use t (fun client ->
       let key = to_string K.pp key in
-      match run client [| "EXISTS"; key |] with
+      match run client [| "EXISTS"; root ^ key |] with
       | Integer 1L -> Lwt.return_true
       | _ -> Lwt.return_false)
 end
@@ -84,28 +89,31 @@ end
 module AO (K: Irmin.Hash.S) (V: Irmin.Contents.Conv) = struct
   include RO(K)(V)
 
-  let add t value =
+  let v = v "obj"
+
+  let add (root, t) value =
     Pool.use t (fun client ->
       let key = K.digest V.t value in
       let key' = to_string K.pp key in
       let value = to_string V.pp value in
-      ignore (run client [| "SET"; key'; value |]);
+      ignore (run client [| "SET"; root ^ key'; value |]);
       Lwt.return key)
 end
 
 module Link (K: Irmin.Hash.S) = struct
   include RO(K)(K)
 
-  let add t index key =
+  let v = v "link"
+
+  let add (root, t) index key =
     Pool.use t (fun client ->
       let key = to_string K.pp key in
       let index = to_string K.pp index in
-      ignore (run client [| "SET"; index; key |]);
+      ignore (run client [| "SET"; root ^ index; key |]);
       Lwt.return_unit)
 end
 
 module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
-
   module RO = RO(K)(V)
   module W = Irmin.Private.Watch.Make(K)(V)
 
@@ -117,21 +125,23 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
   let watches = W.v ()
 
   let v config =
-    RO.v config >>= fun t ->
+    RO.v "data" config >>= fun t ->
     Lwt.return { t; w = watches }
 
   let find t = RO.find t.t
-  let mem t = RO.mem t.t
+  let mem t  = RO.mem t.t
   let watch_key t = W.watch_key t.w
   let watch t = W.watch t.w
   let unwatch t = W.unwatch t.w
 
-  let list t =
-    Pool.use t.t (fun client ->
-      match run client [| "KEYS"; "*" |] with
+  let list {t = (root, t)} =
+    Pool.use t (fun client ->
+      match run client [| "KEYS"; root ^ "*" |] with
       | Array arr ->
           Array.map (fun k ->
             let k = Value.to_string k in
+            let offs = String.length root in
+            let k = String.sub k offs (String.length k - offs) in
             K.of_string k
           ) arr
           |> Array.to_list
@@ -141,21 +151,21 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
       | _ -> Lwt.return []
     )
 
-  let set t key value =
-    Pool.use t.t (fun client ->
+  let set {t = (root, t); w} key value =
+    Pool.use t (fun client ->
       let key' = to_string K.pp key in
       let value' = to_string V.pp value in
-      match run client [| "SET"; key'; value' |] with
-      | Status "OK" -> W.notify t.w key (Some value)
+      match run client [| "SET"; root ^ key'; value' |] with
+      | Status "OK" -> W.notify w key (Some value)
       | _ -> Lwt.return_unit)
 
   let set' = set
 
-  let remove t key =
-    Pool.use t.t (fun client ->
+  let remove {t = (root, t); w} key =
+    Pool.use t (fun client ->
       let key' = to_string K.pp key in
-      match run client [| "DEL"; key' |] with
-      | Status "OK" -> W.notify t.w key None
+      match run client [| "DEL"; root ^ key' |] with
+      | Status "OK" -> W.notify w key None
       | _ -> Lwt.return_unit)
 
   let test_and_set t key ~test ~set =

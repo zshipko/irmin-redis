@@ -14,15 +14,4 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  *)
 
-open Irmin_test
-
-let misc = [
-  "link", [
-    Test_link.test "redis" Test_redis.link;
-  ]
-]
-
-let () =
-  Test_store.run "irmin" ~misc [
-    `Quick , Test_redis.suite;
-  ]
+(* left empty on purpose *)

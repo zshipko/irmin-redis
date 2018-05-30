@@ -1,12 +1,17 @@
 (jbuild_version 1)
 
-(executables
-    ((libraries (irmin-unix irmin-redis))
-     (names (test))
-     (modules (test))))
+(library
+ ((name      test_redis)
+  (modules   (test_redis))
+  (libraries (irmin-redis irmin-test))))
+
+(executable
+ ((name      test)
+  (modules   (test))
+  (libraries (test_redis irmin-test))))
 
 (alias
-    ((name runtest)
-     (package irmin-redis)
-     (deps (test.exe))
-     (action (run ${<}))))
+ ((name runtest)
+  (package irmin-redis)
+  (deps (test.exe))
+  (action (run ${exe:test.exe} -q --color=always))))

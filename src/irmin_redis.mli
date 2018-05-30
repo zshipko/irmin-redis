@@ -1,5 +1,6 @@
 val config:
   ?config:Irmin.Private.Conf.t ->
+  ?root:string ->
   ?port:int ->
   ?nclients:int ->
   string ->

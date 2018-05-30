@@ -15,6 +15,7 @@ depends:
     "jbuilder" {build}
     "hiredis"
     "irmin"
+    "irmin-test" {test}
 ]
 
 depopts: []
