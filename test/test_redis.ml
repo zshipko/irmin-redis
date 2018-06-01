@@ -34,4 +34,4 @@ let clean () =
 
 let init () = Lwt.return_unit
 let stats = None
-let suite = { name = "REDIS"; kind = `Core; init; clean; config; store; stats }
+let suite = { name = "REDIS"; init; clean; config; store; stats }
