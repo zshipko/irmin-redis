@@ -130,7 +130,7 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
 
   let find t = RO.find t.t
   let mem t  = RO.mem t.t
-  let watch_key t = W.watch_key t.w
+  let watch_key t key = Fmt.pr "%a\n%!" K.pp key; W.watch_key t.w key
   let watch t = W.watch t.w
   let unwatch t = W.unwatch t.w
 
@@ -159,15 +159,13 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
       | Status "OK" -> W.notify w key (Some value)
       | _ -> Lwt.return_unit)
 
-  let set' = set
-
   let remove {t = (root, t); w} key =
     Pool.use t (fun client ->
       let key' = to_string K.pp key in
-      match run client [| "DEL"; root ^ key' |] with
-      | Status "OK" -> W.notify w key None
-      | _ -> Lwt.return_unit)
+      ignore (run client [| "DEL"; root ^ key' |]);
+      W.notify w key None)
 
+  let set' = set
   let test_and_set t key ~test ~set =
     find t key >>= fun v ->
     if Irmin.Type.(equal (option V.t)) test v then (
@@ -175,7 +173,6 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
         | None -> remove t key
         | Some v -> set' t key v
       ) >>= fun () ->
-      W.notify t.w key set >>= fun () ->
       Lwt.return_true
     ) else (
       Lwt.return_false
