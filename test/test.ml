@@ -16,6 +16,9 @@
 
 open Irmin_test
 
+let server = Hiredis.Shell.Server.start Test_redis.port
+let _ = Unix.sleep 1
+
 let misc = [
   "link", [
     Test_link.test "redis" Test_redis.link;
@@ -23,6 +26,9 @@ let misc = [
 ]
 
 let () =
-  Test_store.run "irmin" ~misc [
-    `Quick , Test_redis.suite;
-  ]
+  let check = Hiredis.Client.connect ~port:Test_redis.port "127.0.0.1" in
+  if Hiredis.Client.run check [| "PING" |] <> Hiredis.Nil then
+    Test_store.run "irmin" ~misc [
+      `Quick , Test_redis.suite;
+    ];
+    Hiredis.Shell.Server.stop server

@@ -135,7 +135,7 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
   let unwatch t = W.unwatch t.w
 
   let list {t = (root, t)} =
-    Pool.use t (fun client ->
+    let aux client =
       match run client [| "KEYS"; root ^ "*" |] with
       | Array arr ->
           Array.map (fun k ->
@@ -149,7 +149,20 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
             | Ok s -> Lwt.return_some s
             | _ -> Lwt.return_none)
       | _ -> Lwt.return []
-    )
+    in
+    Pool.use t (fun client ->
+      match run client [| "CLUSTER"; "slots" |] with
+      | Error _ -> aux client
+      | Array nodes ->
+          Array.fold_right (fun node acc ->
+            let node = Value.to_array node in
+            let info = Value.to_array node.(2) in
+            let host = Value.to_string info.(0) in
+            let port = Value.to_int info.(1) in
+            let c = Client.connect ~port host in
+            acc >>= fun acc ->
+            aux c >|= fun l -> acc @ l) nodes (Lwt.return [])
+      | _ -> Lwt.return [])
 
   let set {t = (root, t); w} key value =
     Pool.use t (fun client ->

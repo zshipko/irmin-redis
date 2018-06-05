@@ -17,15 +17,17 @@
 open Lwt.Infix
 open Irmin_test
 
+let port = 9999
+
 let store = store (module Irmin_redis.Make) (module Irmin.Metadata.None)
 
 module Link = struct
   include Irmin_redis.Link(Irmin.Hash.SHA1)
-  let v () = v (Irmin_redis.config ~port:6379 "127.0.0.1")
+  let v () = v (Irmin_redis.config ~port "127.0.0.1")
 end
 
 let link = (module Link: Test_link.S)
-let config = Irmin_redis.config ~port:6379 "127.0.0.1"
+let config = Irmin_redis.config ~port "127.0.0.1"
 
 let clean () =
   let (module S: Test_S) = store in
