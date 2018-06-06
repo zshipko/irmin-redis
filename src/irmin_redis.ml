@@ -40,12 +40,23 @@ let info ?author fmt =
     Irmin.Info.v ~date ~author msg
   ) fmt
 
-let rec run client args = match Client.run client args with
-  | Error s when String.sub s 0 5 = "MOVED" ->
+type client = {
+  mutable handle: Hiredis.Client.t;
+}
+
+let rec run client args = match Client.run client.handle args with
+  | Error s when (try String.sub s 0 3 = "ASK" with _ -> false) ->
     let addr = String.split_on_char ' ' s |> List.rev |> List.hd in
     (match String.split_on_char ':' addr with
     | host::port::_ ->
-      let client = Hiredis.Client.connect ~port:(int_of_string port) host in
+      let client' = Hiredis.Client.connect ~port:(int_of_string port) host in
+      run {handle = client'} args
+    | _ -> Value.nil)
+  | Error s when (try String.sub s 0 5 = "MOVED" with _ -> false) ->
+    let addr = String.split_on_char ' ' s |> List.rev |> List.hd in
+    (match String.split_on_char ':' addr with
+    | host::port::_ ->
+      client.handle <- Hiredis.Client.connect ~port:(int_of_string port) host;
       run client args
     | _ -> Value.nil)
   | x -> x
@@ -69,7 +80,7 @@ module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
   let find (root, t) key =
     Pool.use t (fun client ->
       let key = to_string K.pp key in
-      match run client [| "GET"; root ^  key |] with
+      match run {handle = client} [| "GET"; root ^  key |] with
       | String s ->
         begin
           match V.of_string s with
@@ -81,7 +92,7 @@ module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
   let mem (root, t) key =
     Pool.use t (fun client ->
       let key = to_string K.pp key in
-      match run client [| "EXISTS"; root ^ key |] with
+      match run {handle = client} [| "EXISTS"; root ^ key |] with
       | Integer 1L -> Lwt.return_true
       | _ -> Lwt.return_false)
 end
@@ -96,7 +107,7 @@ module AO (K: Irmin.Hash.S) (V: Irmin.Contents.Conv) = struct
       let key = K.digest V.t value in
       let key' = to_string K.pp key in
       let value = to_string V.pp value in
-      ignore (run client [| "SET"; root ^ key'; value |]);
+      ignore (run {handle = client} [| "SET"; root ^ key'; value |]);
       Lwt.return key)
 end
 
@@ -109,7 +120,7 @@ module Link (K: Irmin.Hash.S) = struct
     Pool.use t (fun client ->
       let key = to_string K.pp key in
       let index = to_string K.pp index in
-      ignore (run client [| "SET"; root ^ index; key |]);
+      ignore (run {handle = client} [| "SET"; root ^ index; key |]);
       Lwt.return_unit)
 end
 
@@ -151,8 +162,8 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
       | _ -> Lwt.return []
     in
     Pool.use t (fun client ->
-      match run client [| "CLUSTER"; "slots" |] with
-      | Error _ -> aux client
+      match run {handle = client} [| "CLUSTER"; "slots" |] with
+      | Error _ -> aux {handle = client}
       | Array nodes ->
           Array.fold_right (fun node acc ->
             let node = Value.to_array node in
@@ -161,21 +172,21 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
             let port = Value.to_int info.(1) in
             let c = Client.connect ~port host in
             acc >>= fun acc ->
-            aux c >|= fun l -> acc @ l) nodes (Lwt.return [])
+            aux {handle = c} >|= fun l -> acc @ l) nodes (Lwt.return [])
       | _ -> Lwt.return [])
 
   let set {t = (root, t); w} key value =
     Pool.use t (fun client ->
       let key' = to_string K.pp key in
       let value' = to_string V.pp value in
-      match run client [| "SET"; root ^ key'; value' |] with
+      match run {handle = client} [| "SET"; root ^ key'; value' |] with
       | Status "OK" -> W.notify w key (Some value)
       | _ -> Lwt.return_unit)
 
   let remove {t = (root, t); w} key =
     Pool.use t (fun client ->
       let key' = to_string K.pp key in
-      ignore (run client [| "DEL"; root ^ key' |]);
+      ignore (run {handle = client} [| "DEL"; root ^ key' |]);
       W.notify w key None)
 
   let set' = set
