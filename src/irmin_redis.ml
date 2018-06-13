@@ -87,7 +87,7 @@ module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
           | Ok s -> Lwt.return_some s
           | _ -> Lwt.return_none
         end
-      | x -> Lwt.return_none)
+      | _ -> Lwt.return_none)
 
   let mem (root, t) key =
     Pool.use t (fun client ->
@@ -145,7 +145,7 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
   let watch t = W.watch t.w
   let unwatch t = W.unwatch t.w
 
-  let list {t = (root, t)} =
+  let list {t = (root, t); _} =
     let aux client =
       match run client [| "KEYS"; root ^ "*" |] with
       | Array arr ->
