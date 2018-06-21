@@ -33,7 +33,7 @@ let _ = at_exit (fun () ->
 
 let () =
   let client = Hiredis.Client.connect ~port "127.0.0.1" in
-  if Hiredis.Client.run client [| "PING" |] <> Hiredis.Nil then
+  if Hiredis.Client.run client [| "PING" |] <> Hiredis_value.Nil then
   Test_store.run "irmin-redis" ~misc [
     `Quick , Test_redis.suite;
     `Quick, Test_cluster.suite;

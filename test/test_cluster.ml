@@ -1,7 +1,9 @@
 open Lwt.Infix
 open Irmin_test
 
-let create_cluster start_port n =
+let start () =
+  let start_port = 7000 in
+  let n = 3 in
   let config = [
     "cluster-enabled", ["yes"];
     "cluster-config-file", ["nodes.conf"];
@@ -22,11 +24,30 @@ let create_cluster start_port n =
     s := !s ^ " 127.0.0.1:" ^ string_of_int port;
     Unix.chdir "../.."
   done;
-  Unix.system ("./redis-trib.rb create" ^ !s) |> ignore;
+  Unix.sleep 5;
+  for i = 0 to n - 1 do
+    let port = start_port + i in
+    let client = Hiredis.Client.connect ~port "127.0.0.1" in
+    for j = 0 to n - 1 do
+      if i <> j then
+        Hiredis.Client.run client [| "CLUSTER"; "MEET"; "127.0.0.1"; string_of_int (start_port + j) |] |> Hiredis_value.to_string |> print_endline
+    done
+  done;
+  let a = Hiredis.Client.connect ~port:7000 "127.0.0.1" in
+  let b = Hiredis.Client.connect ~port:7001 "127.0.0.1" in
+  let c = Hiredis.Client.connect ~port:7002 "127.0.0.1" in
+  for slot = 0 to 5461 do
+    Hiredis.Client.run a  [| "CLUSTER"; "ADDSLOTS"; string_of_int slot |] |> ignore
+  done;
+  for slot = 5462 to 10923 do
+    Hiredis.Client.run b  [| "CLUSTER"; "ADDSLOTS"; string_of_int slot |] |> ignore
+  done;
+  for slot = 10924 to 16383 do
+    Hiredis.Client.run c  [| "CLUSTER"; "ADDSLOTS"; string_of_int slot |] |> ignore
+  done;
+  Unix.sleep 5;
   !l
 
-let start () =
-  create_cluster 7000 6
 
 let stop servers =
   List.iter (fun server ->

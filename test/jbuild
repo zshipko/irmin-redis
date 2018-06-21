@@ -18,5 +18,5 @@
 (alias
  ((name runtest)
   (package irmin-redis)
-  (deps (test.exe redis-trib.rb))
+  (deps (test.exe))
   (action (run ${exe:test.exe} -q --color=always))))
