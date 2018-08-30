@@ -70,7 +70,7 @@ module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
     let module C = Irmin.Private.Conf in
     let root = match C.get config Irmin.Private.Conf.root with
       | Some root -> root ^ ":" ^ prefix ^ ":"
-      | None -> ""
+      | None -> prefix ^ ":"
     in
     let hostname = C.get config Key.hostname in
     let port = C.get config Key.port in
