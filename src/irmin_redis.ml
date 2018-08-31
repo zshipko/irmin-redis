@@ -189,17 +189,39 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
       ignore (run {handle = client} [| "DEL"; root ^ key' |]);
       W.notify w key None)
 
-  let set' = set
-  let test_and_set t key ~test ~set =
-    find t key >>= fun v ->
-    if Irmin.Type.(equal (option V.t)) test v then (
-      (match set with
-        | None -> remove t key
-        | Some v -> set' t key v
-      ) >>= fun () ->
-      Lwt.return_true
-    ) else (
-      Lwt.return_false
+  let txn client args =
+    ignore @@ run client [| "MULTI" |];
+    ignore @@ run client args;
+    run client [| "EXEC" |] <> Nil
+
+  let test_and_set t key ~test ~set:s =
+    let root, db = t.t in
+    let key' = to_string K.pp key in
+    Pool.use db (fun client ->
+      let client = {handle = client} in
+      ignore @@ run client [| "WATCH"; root ^ key' |];
+      find t key >>= fun v ->
+      if Irmin.Type.(equal (option V.t)) test v then (
+      (match s with
+        | None ->
+            if txn client [| "DEL"; root ^ key' |] then
+              W.notify t.w key None >>= fun () ->
+              Lwt.return_true
+            else
+              Lwt.return_false
+        | Some v ->
+            let v' = to_string V.pp v in
+            if txn client [| "SET"; root ^ key'; v' |] then
+              W.notify t.w key (Some v) >>= fun () ->
+              Lwt.return_true
+            else
+              Lwt.return_false
+      ) >>= fun ok ->
+        Lwt.return ok
+      ) else (
+        ignore @@ run client [| "UNWATCH"; root ^ key' |];
+        Lwt.return_false
+      )
     )
 end
 
