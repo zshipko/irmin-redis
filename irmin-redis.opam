@@ -12,7 +12,7 @@ available: [ ocaml-version >= "4.03.0"]
 
 depends:
 [
-    "jbuilder" {build}
+    "dune" {build}
     "hiredis"
     "irmin"
     "irmin-test" {test}
@@ -22,10 +22,10 @@ depopts: []
 
 build:
 [
-    ["jbuilder" "build"]
+    ["dune" "build" "-p" name "-j" jobs]
 ]
 
 build-test:
 [
-    ["jbuilder" "runtest"]
+    ["dune" "runtest"]
 ]
