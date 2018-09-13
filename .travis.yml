@@ -3,7 +3,7 @@ install: wget https://raw.githubusercontent.com/ocaml/ocaml-travisci-skeleton/ma
 script: bash -ex .travis-opam.sh
 before_install:
   - sudo apt-get update
-  - sudo apt-get install -y redis
+  - sudo apt-get install -y redis-server
 env:
   global:
     - ALCOTEST_SHOW_ERRORS=1
