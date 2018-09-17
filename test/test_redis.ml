@@ -22,18 +22,24 @@ let port = 9999
 let store = store (module Irmin_redis.Make) (module Irmin.Metadata.None)
 
 module Link = struct
-  include Irmin_redis.Link(Irmin.Hash.SHA1)
+  include Irmin_redis.Link (Irmin.Hash.SHA1)
+
   let v () = v (Irmin_redis.config ~port "127.0.0.1")
 end
 
-let link = (module Link: Test_link.S)
+let link = (module Link : Irmin_test.Link.S)
+
 let config = Irmin_redis.config ~port "127.0.0.1"
 
 let clean () =
-  let (module S: Test_S) = store in
-  S.Repo.v config >>= fun repo ->
+  let (module S : Irmin_test.S) = store in
+  S.Repo.v config
+  >>= fun repo ->
   S.Repo.branches repo >>= Lwt_list.iter_p (S.Branch.remove repo)
 
+
 let init () = Lwt.return_unit
+
 let stats = None
-let suite = { name = "REDIS"; init; clean; config; store; stats }
+
+let suite = {name = "REDIS"; init; clean; config; store; stats}

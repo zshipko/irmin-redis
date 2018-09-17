@@ -17,24 +17,25 @@
 open Irmin_test
 
 let port = 9999
+
 let server = Hiredis.Shell.Server.start port
+
 let _ = Unix.sleep 3
 
-let misc = [
-  "link", [
-    Test_link.test "redis" Test_redis.link;
-    Test_link.test "redis-cluster" Test_cluster.link;
-  ]
-]
+let misc =
+  [ ( "link"
+    , [ Link.test "redis" Test_redis.link
+      ; Link.test "redis-cluster" Test_cluster.link ] ) ]
 
-let _ = at_exit (fun () ->
-  Hiredis.Shell.Server.stop server;
-  Test_cluster.stop Test_cluster.servers)
+
+let _ =
+  at_exit (fun () ->
+      Hiredis.Shell.Server.stop server;
+      Test_cluster.stop Test_cluster.servers )
+
 
 let () =
   let client = Hiredis.Client.connect ~port "127.0.0.1" in
-  if Hiredis.Client.run client [| "PING" |] <> Hiredis_value.Nil then
-  Test_store.run "irmin-redis" ~misc [
-    `Quick , Test_redis.suite;
-    `Quick, Test_cluster.suite;
-  ]
+  if Hiredis.Client.run client [|"PING"|] <> Hiredis_value.Nil then
+    Store.run "irmin-redis" ~misc
+      [(`Quick, Test_redis.suite); (`Quick, Test_cluster.suite)]
