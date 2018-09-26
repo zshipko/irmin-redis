@@ -2,8 +2,6 @@ open Lwt.Infix
 
 open Hiredis
 
-let to_string pp x = Fmt.strf "%a" pp x
-
 module Key = struct
   let hostname =
     Irmin.Private.Conf.key
@@ -61,7 +59,7 @@ let rec run client args = match Client.run client.handle args with
     | _ -> Value.nil)
   | x -> x
 
-module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
+module RO (K: Irmin.Type.S) (V: Irmin.Type.S) = struct
   type key = K.t
   type value = V.t
   type t = string * Pool.t
@@ -79,11 +77,11 @@ module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
 
   let find (root, t) key =
     Pool.use t (fun client ->
-      let key = to_string K.pp key in
+      let key = Irmin.Type.to_string K.t key in
       match run {handle = client} [| "GET"; root ^  key |] with
       | String s ->
         begin
-          match V.of_string s with
+          match Irmin.Type.of_string V.t s with
           | Ok s -> Lwt.return_some s
           | _ -> Lwt.return_none
         end
@@ -91,22 +89,22 @@ module RO (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
 
   let mem (root, t) key =
     Pool.use t (fun client ->
-      let key = to_string K.pp key in
+      let key = Irmin.Type.to_string K.t key in
       match run {handle = client} [| "EXISTS"; root ^ key |] with
       | Integer 1L -> Lwt.return_true
       | _ -> Lwt.return_false)
 end
 
-module AO (K: Irmin.Hash.S) (V: Irmin.Contents.Conv) = struct
+module AO (K: Irmin.Hash.S) (V: Irmin.Type.S) = struct
   include RO(K)(V)
 
   let v = v "obj"
 
   let add (root, t) value =
     Pool.use t (fun client ->
-      let key = K.digest V.t value in
-      let key' = to_string K.pp key in
-      let value = to_string V.pp value in
+      let key = K.digest (Irmin.Type.to_string V.t value) in
+      let key' = Irmin.Type.to_string K.t key in
+      let value = Irmin.Type.to_string V.t value in
       ignore (run {handle = client} [| "SET"; root ^ key'; value |]);
       Lwt.return key)
 end
@@ -118,13 +116,13 @@ module Link (K: Irmin.Hash.S) = struct
 
   let add (root, t) index key =
     Pool.use t (fun client ->
-      let key = to_string K.pp key in
-      let index = to_string K.pp index in
+      let key = Irmin.Type.to_string K.t key in
+      let index = Irmin.Type.to_string K.t index in
       ignore (run {handle = client} [| "SET"; root ^ index; key |]);
       Lwt.return_unit)
 end
 
-module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
+module RW (K: Irmin.Type.S) (V: Irmin.Type.S) = struct
   module RO = RO(K)(V)
   module W = Irmin.Private.Watch.Make(K)(V)
 
@@ -141,7 +139,7 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
 
   let find t = RO.find t.t
   let mem t  = RO.mem t.t
-  let watch_key t key = Fmt.pr "%a\n%!" K.pp key; W.watch_key t.w key
+  let watch_key t key = Fmt.pr "%a\n%!" (Irmin.Type.pp K.t) key; W.watch_key t.w key
   let watch t = W.watch t.w
   let unwatch t = W.unwatch t.w
 
@@ -153,7 +151,7 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
             let k = Value.to_string k in
             let offs = String.length root in
             let k = String.sub k offs (String.length k - offs) in
-            K.of_string k
+            Irmin.Type.of_string K.t k
           ) arr
           |> Array.to_list
           |> Lwt_list.filter_map_s (function
@@ -177,15 +175,15 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
 
   let set {t = (root, t); w} key value =
     Pool.use t (fun client ->
-      let key' = to_string K.pp key in
-      let value' = to_string V.pp value in
+      let key' = Irmin.Type.to_string K.t key in
+      let value' = Irmin.Type.to_string V.t value in
       match run {handle = client} [| "SET"; root ^ key'; value' |] with
       | Status "OK" -> W.notify w key (Some value)
       | _ -> Lwt.return_unit)
 
   let remove {t = (root, t); w} key =
     Pool.use t (fun client ->
-      let key' = to_string K.pp key in
+      let key' = Irmin.Type.to_string K.t key in
       ignore (run {handle = client} [| "DEL"; root ^ key' |]);
       W.notify w key None)
 
@@ -196,7 +194,7 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
 
   let test_and_set t key ~test ~set:s =
     let root, db = t.t in
-    let key' = to_string K.pp key in
+    let key' = Irmin.Type.to_string K.t key in
     Pool.use db (fun client ->
       let client = {handle = client} in
       ignore @@ run client [| "WATCH"; root ^ key' |];
@@ -210,7 +208,7 @@ module RW (K: Irmin.Contents.Conv) (V: Irmin.Contents.Conv) = struct
             else
               Lwt.return_false
         | Some v ->
-            let v' = to_string V.pp v in
+            let v' = Irmin.Type.to_string V.t v in
             if txn client [| "SET"; root ^ key'; v' |] then
               W.notify t.w key (Some v) >>= fun () ->
               Lwt.return_true

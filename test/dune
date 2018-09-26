@@ -11,7 +11,7 @@
 (executable
   (name      test)
   (modules   test)
-  (libraries test_redis test_cluster irmin-test))
+  (libraries digestif.c test_redis test_cluster irmin-test))
 
 (alias
   (name runtest)
